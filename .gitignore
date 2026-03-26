@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+venv/
+.venv/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Data files (usually too large for GitHub)
+*.fastq
+*.fastq.gz
+*.bam
+*.bam.bai
+*.vcf
+*.vcf.gz
+*.bed
+*.h5
+*.h5ad
+*.loom
+
+# Logs and outputs
+*.log
+*.out
+*.err
+slurm-*.out
+
+# OS
+.DS_Store
