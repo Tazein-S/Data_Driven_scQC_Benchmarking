@@ -31,4 +31,10 @@ slurm-*.out
 # OS
 .DS_Store
 
-data/
+data/recreate_colon/*.tsv
+data/recreate_colon/*.mtx
+data/recreate_colon/all.meta2.txt
+
+data/recreate_kidney/*.txt.gz
+data/recreate_kidney/*.xlsx
+data/recreate_kidney/*.tar.gz

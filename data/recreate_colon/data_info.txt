@@ -1,0 +1,28 @@
+Dataset: Smillie et al. 2019 (Cell, DOI: 10.1016/j.cell.2019.06.029)
+Compartment: Immune
+Technology: 10x Genomics
+
+Files
+-----
+(WHAT WE WANT TO ANALYZE!)
+gene_sorted-Imm.matrix.mtx
+    Sparse count matrix in MatrixMarket format, sorted by gene index.
+    Contains raw UMI counts.
+    Dimensions: 20,529 genes x 210,614 cells
+    Non-zero entries: 173,255,714
+
+Imm.barcodes2.tsv
+    Cell barcodes corresponding to columns of the count matrix.
+    210,614 cells.
+
+Imm.genes.tsv
+    Gene IDs corresponding to rows of the count matrix.
+    20,529 genes.
+
+all.meta2.txt
+    Cell-level metadata for all compartments (epithelial, immune, stromal). *cluster info as well even though data is not*
+    Columns: NAME, Cluster, nGene, nUMI, Subject, Health, Location, Sample
+    Must be subset to barcodes in Imm.barcodes2.tsv for immune compartment only.
+
+info.csv
+    Dataset metadata summary from the Excel sheet (source, technology, reference, etc.)
