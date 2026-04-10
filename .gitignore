@@ -38,3 +38,11 @@ data/recreate_colon/all.meta2.txt
 data/recreate_kidney/*.txt.gz
 data/recreate_kidney/*.xlsx
 data/recreate_kidney/*.tar.gz
+
+*.rds
+
+recreation/noQC/no_qc_clusters.csv
+recreation/noQC/*.png
+recreation/standard_QC/*.png
+
+

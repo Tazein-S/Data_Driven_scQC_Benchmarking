@@ -1,0 +1,96 @@
+---
+title: "No QC Analysis – Colon Dataset" 
+author: "Maha Attique" 
+date: "`r Sys.Date()`" 
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Setup and loading data
+
+```{r setup, message=FALSE, warning=FALSE}
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+
+colon_immune_raw <- readRDS("/projectnb/ds596/projects/Team 9/scQC_project/colon_immune_raw.rds")
+
+seurat_obj <- colon_immune_raw
+```
+
+## Normalization and data scaling using the same parameters as standard guidance (vignette)
+
+```{r preprocessing}
+
+seurat_obj <- NormalizeData(seurat_obj)
+
+seurat_obj <- FindVariableFeatures(seurat_obj, selection.method = "vst", nfeatures = 2000)
+
+seurat_obj <- ScaleData(seurat_obj)
+
+```
+
+## PCs Calculations
+
+```{r pca}
+seurat_obj <- RunPCA(seurat_obj, npcs = 50)
+
+p <- ElbowPlot(seurat_obj)
+
+ggsave(
+  filename = "/projectnb/ds596/projects/Team 9/scQC_project/recreation/noQC/elbow_plot.png",
+  plot = p,
+  width = 7,
+  height = 5
+)
+
+p
+
+```
+
+## Clustering
+
+```{r clustering}
+seurat_obj <- FindNeighbors(seurat_obj, dims = 1:20)
+seurat_obj <- FindClusters(seurat_obj, resolution = 1.4)
+```
+## UMAP
+
+```{r umap}
+seurat_obj <- RunUMAP(seurat_obj, dims = 1:20)
+
+png("/projectnb/ds596/projects/Team 9/scQC_project/recreation/noQC/no_qc_umap.png", width = 1200, height = 1000)
+
+DimPlot(seurat_obj, reduction = "umap", label = TRUE, raster = FALSE) + 
+  ggtitle("UMAP – No QC Applied")
+
+# dev.off()
+```
+
+
+## Cluster Sizes
+
+```{r clusters}
+table(Idents(seurat_obj))
+```
+
+## Outputs
+
+```{r save}
+
+
+write.csv(
+  data.frame(
+    cell = colnames(seurat_obj),
+    cluster = Idents(seurat_obj)
+  ),
+  "/projectnb/ds596/projects/Team 9/scQC_project/recreation/noQC/no_qc_clusters.csv",
+  row.names = FALSE
+)
+
+saveRDS(seurat_obj, "/projectnb/ds596/projects/Team 9/scQC_project/recreation/noQC/no_qc_output.rds")
+```
+

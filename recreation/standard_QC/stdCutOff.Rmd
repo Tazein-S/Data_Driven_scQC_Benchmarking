@@ -1,0 +1,115 @@
+```{r}
+library(Seurat)
+seurat_obj <- readRDS("colon_immune_raw.rds")
+message(sprintf("Before filter: %d genes x %d cells",
+  nrow(seurat_obj), ncol(seurat_obj)))
+```
+
+
+
+``` {r load library and Rds object}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+
+##Load the dataset
+seuratObj <- readRDS("colon_immune_raw.rds")
+
+##Metric QC
+seuratObj[["percent.mt"]] <- PercentageFeatureSet(seuratObj, pattern = "^MT-")
+
+# Filter cells
+seuratObj <- subset(seuratObj,
+  subset = nFeature_RNA >= 100 & percent.mt < 80
+)
+
+# Filter genes
+counts <- GetAssayData(seuratObj, layer = "counts")
+genes_keep <- rowSums(counts > 0) >= 3
+seuratObj <- seuratObj[genes_keep, ]
+
+message(sprintf("After initial filtering: %d genes x %d cells",
+  nrow(seuratObj), ncol(seuratObj)))
+```
+
+```{r}
+##QC metric visualization
+VlnPlot(seuratObj, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0, combine = FALSE)
+plot_1 <- FeatureScatter(seuratObj, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot_2 <- FeatureScatter(seuratObj, feature1= "nCount_RNA", feature2= "nFeature_RNA")
+combined <- plot_1 + plot_2
+combined
+```
+
+```{r}
+##Standard cutoff filtering, removing cells with gene features less than 200 and mitochondria more than 10%
+seuratObj <- subset(seuratObj, subset = nFeature_RNA >= 200 & percent.mt < 10) 
+seuratObj
+#high_mt_cells <- seuratObj@meta.data[seuratObj@meta.data$percent.mt > 10, ] <-- checking if the filter works
+#head(high_mt_cells)
+#head(seuratObj@meta.data)
+#dim(seuratObj) #checking the dimension
+```
+
+```{r}
+##Normalization used NormalizeData in Seurat, multiply bt scale factor 10,000 and log transform to get log(TPX+1) values
+seuratObj <- NormalizeData(seuratObj, normalization.method = "LogNormalize", scale.factor = 10000)
+```
+
+```{r}
+##Highly variable genes
+seuratObj <- FindVariableFeatures(seuratObj, selection.method = "vst", nfeatures = 2000)
+
+#Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(seuratObj), 10)
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(seuratObj)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+png("variable_features_new.png", width = 1200, height = 600)
+print(plot1 + plot2)
+dev.off()
+```
+
+```{r}
+##Data Scaling
+seuratObj <- ScaleData(seuratObj, features = VariableFeatures(seuratObj))
+```
+
+```{r}
+#PCs calculation and PCA plotting
+seuratObj <- RunPCA(seuratObj, features = VariableFeatures(object = seuratObj))
+print(seuratObj[["pca"]], dims = 1:5, nfeatures = 5)
+VizDimLoadings(seuratObj, dims = 1:2, reduction = "pca")
+DimPlot(seuratObj, reduction = "pca") + NoLegend()
+DimHeatmap(seuratObj, dims = 3, cells = 500, balanced = TRUE)
+ElbowPlot(seuratObj)
+```
+
+```{r}
+#Cell clustering 
+seuratObj<- FindNeighbors(seuratObj, dims = 1:10)
+seuratObj<- FindClusters(seuratObj, resolution = 0.5)
+head(Idents(seuratObj), 5)
+```
+
+```{r}
+#UMAP Plotting
+Idents(seuratObj) <- "seurat_clusters"
+seuratObj <- RunUMAP(seuratObj, dims = 1:10)
+p <- DimPlot(
+  seuratObj,
+  reduction = "umap",
+  label = TRUE,
+  repel = TRUE,
+  label.size = 6
+)
+png("UMAP_stdCutOff.png", width = 1200, height = 600)
+print(p)
+dev.off()
+```
+
+```{r}
+#saving the file 
+saveRDS(seuratObj, file="stdCutOff_colon_latest.rds")
+```

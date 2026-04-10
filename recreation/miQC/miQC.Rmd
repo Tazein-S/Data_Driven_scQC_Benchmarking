@@ -1,0 +1,80 @@
+---
+title: "miQC"
+output: html_document
+---
+Set paths
+```{r}
+rds_path <- "/projectnb/ds596/projects/Team 9/scQC_project/colon_immune_raw.rds"
+out_path  <- "/projectnb/ds596/projects/Team 9/scQC_project/recreation/miQC/miQC_filtered.rds"
+umap_path <- "/projectnb/ds596/projects/Team 9/scQC_project/recreation/miQC/umap.png"
+```
+
+Load packages
+```{r include=FALSE}
+library(Seurat)
+library(SingleCellExperiment)
+library(scater)
+library(miQC)
+```
+
+Load the shared Seurat object
+```{r}
+seurat_obj <- readRDS(rds_path)
+```
+
+Convert to SingleCellExperiment
+```{r}
+sce <- as.SingleCellExperiment(seurat_obj)
+```
+
+Define mitochondrial gene subset and compute QC metrics
+```{r}
+mt_genes      <- grepl("^MT-", rownames(sce))
+feature_ctrls <- list(mito = rownames(sce)[mt_genes])
+
+sce <- addPerCellQC(sce, subsets = feature_ctrls)
+```
+
+Visualize metrics before filtering
+```{r}
+plotMetrics(sce)
+```
+
+Fit mixture model
+```{r}
+model <- mixtureModel(sce)
+plotModel(sce, model)
+plotFiltering(sce, model)
+```
+
+Filter cells
+```{r}
+sce_filtered <- filterCells(sce, model)
+
+message(sprintf("Cells before filtering: %d", ncol(sce)))
+message(sprintf("Cells after filtering:  %d", ncol(sce_filtered)))
+```
+
+Convert back to Seurat
+```{r}
+seurat_filtered <- as.Seurat(sce_filtered, counts = "counts", data = NULL)
+```
+
+Create the UMAP
+```{r}
+# Normalize and reduce dimensions for UMAP visualization
+seurat_filtered <- NormalizeData(seurat_filtered)
+seurat_filtered <- FindVariableFeatures(seurat_filtered)
+seurat_filtered <- ScaleData(seurat_filtered)
+seurat_filtered <- RunPCA(seurat_filtered)
+seurat_filtered <- RunUMAP(seurat_filtered, dims = 1:30)
+
+umap_plot <- DimPlot(seurat_filtered, reduction = "umap")
+umap_plot
+ggsave(umap_path, umap_plot, width = 6, height = 5)
+```
+
+Save filtered object
+```{r}
+saveRDS(seurat_filtered, file = out_path)
+```
