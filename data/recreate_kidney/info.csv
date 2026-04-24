@@ -1,2 +1,0 @@
-Source,Tissue,Name (if different from tissue),Organism,Technology,Reference Genome,Preprocessing Software,Project Link,Data Link,Paper Link,Manuscript reference number,Data Origin,Data Format,Number of samples,Number of cells after basic QC,Starsolo
-Human Tissue Atlas,Kidney,-,Human,Microwell Seq,GRCh38,STAR,https://db.cngb.org/HCL/,https://figshare.com/articles/HCL_DGE_Data/7235471,https://www.nature.com/articles/s41586-020-2157-4,[42],Downloaded from website,txt files,4,,

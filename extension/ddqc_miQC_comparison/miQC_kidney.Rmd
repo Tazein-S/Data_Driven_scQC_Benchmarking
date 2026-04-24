@@ -1,0 +1,188 @@
+---
+title: "miQC_ddqc_kidney"
+output: html_document
+---
+
+Running ddqc and miQC on a paired disease-versus-healthy kidney dataset would therefore allow us to test whether these methods can distinguish true biological variation driven by disease state from low-quality cells. This is a scenario the paper does not explicitly address and one with direct clinical relevance, so this dataset helps us understand the robustness of these quality control methods.
+
+Load in the necessary libraries
+```{r include=FALSE}
+library(Seurat)
+library(SingleCellExperiment)
+library(scater)
+library(flexmix)
+library(splines)
+library(miQC)
+```
+
+Set the values for the healthy vs disease kidney dataset
+```{r echo=TRUE}
+healthy_rds <- "/projectnb/ds596/projects/Team 9/scQC_project/data/extension_kidney/GSE171314_scRNA_healthy.rds"
+disease_rds <- "/projectnb/ds596/projects/Team 9/scQC_project/data/extension_kidney/GSE171314_scRNA_disease.rds"
+```
+
+Setting the parameters
+```{r}
+npcs_use           <- 50
+k_param            <- 20
+cluster_resolution <- 1.4
+random_seed        <- 29
+```
+
+Load and rename cells
+```{r}
+healthy <- readRDS(healthy_rds)
+disease <- readRDS(disease_rds)
+ 
+healthy$condition <- "Healthy"
+disease$condition <- "Disease"
+ 
+healthy <- RenameCells(healthy, add.cell.id = "Healthy")
+disease <- RenameCells(disease, add.cell.id = "Disease")
+```
+
+
+## Healthy Kidney Cells
+
+Load the data
+```{r}
+healthy_raw <- healthy
+cat("Healthy: loaded", nrow(healthy_raw), "genes and", ncol(healthy_raw), "cells\n")
+```
+
+Convert to SCE and compute QC metrics
+
+```{r}
+sce_healthy   <- as.SingleCellExperiment(healthy_raw)
+mt_genes      <- grepl("^MT-", rownames(sce_healthy))
+feature_ctrls <- list(mito = rownames(sce_healthy)[mt_genes])
+sce_healthy   <- addPerCellQC(sce_healthy, subsets = feature_ctrls)
+```
+
+Visualize metrics before filtering
+
+```{r}
+print(plotMetrics(sce_healthy))
+```
+
+Fit mixture model
+
+```{r}
+model_healthy <- mixtureModel(sce_healthy)
+```
+
+Inspect model parameters and posterior probabilities
+
+```{r}
+print(parameters(model_healthy))
+print(head(posterior(model_healthy)))
+ 
+print(plotModel(sce_healthy, model_healthy))
+print(plotFiltering(sce_healthy, model_healthy))
+```
+
+Filter cells
+
+```{r}
+sce_healthy_filt <- filterCells(sce_healthy, model_healthy,
+                                keep_all_below_boundary = TRUE,
+                                enforce_left_cutoff = TRUE)
+message(sprintf("Healthy cells before miQC: %d", ncol(sce_healthy)))
+message(sprintf("Healthy cells after miQC:  %d", ncol(sce_healthy_filt)))
+```
+
+Convert back to Seurat and reprocess
+
+```{r}
+seu_healthy_miqc <- as.Seurat(sce_healthy_filt, counts = "counts", data = NULL)
+seu_healthy_miqc <- NormalizeData(seu_healthy_miqc, verbose = FALSE)
+seu_healthy_miqc <- FindVariableFeatures(seu_healthy_miqc, nfeatures = 2000, verbose = FALSE)
+seu_healthy_miqc <- ScaleData(seu_healthy_miqc, verbose = FALSE)
+seu_healthy_miqc <- RunPCA(seu_healthy_miqc, npcs = npcs_use, verbose = FALSE)
+seu_healthy_miqc <- FindNeighbors(seu_healthy_miqc, dims = 1:npcs_use,
+                                  k.param = k_param, verbose = FALSE)
+seu_healthy_miqc <- FindClusters(seu_healthy_miqc, resolution = cluster_resolution,
+                                 algorithm = 1, random.seed = random_seed, verbose = FALSE)
+seu_healthy_miqc <- RunUMAP(seu_healthy_miqc, dims = 1:20, verbose = FALSE)
+```
+
+UMAP
+
+```{r}
+print(DimPlot(seu_healthy_miqc, reduction = "umap") + ggtitle("miQC UMAP: healthy kidney"))
+```
+
+Save
+
+```{r}
+saveRDS(seu_healthy_miqc, file = "healthy_miQC_filtered.rds")
+```
+
+## Disease Kidney Cells (IgA nephropathy)
+
+Load the data
+```{r}
+disease_raw <- disease
+cat("Disease: loaded", nrow(disease_raw), "genes and", ncol(disease_raw), "cells\n")
+```
+
+Convert to SCE and compute QC metrics
+```{r}
+sce_disease   <- as.SingleCellExperiment(disease_raw)
+mt_genes      <- grepl("^MT-", rownames(sce_disease))
+feature_ctrls <- list(mito = rownames(sce_disease)[mt_genes])
+sce_disease   <- addPerCellQC(sce_disease, subsets = feature_ctrls)
+```
+
+Visualize metrics before filtering
+```{r}
+print(plotMetrics(sce_disease))
+```
+
+Fit mixture model
+```{r}
+model_disease <- mixtureModel(sce_disease)
+```
+
+Inspect model parameters and posterior probabilities
+```{r}
+print(parameters(model_disease))
+print(head(posterior(model_disease)))
+ 
+print(plotModel(sce_disease, model_disease))
+print(plotFiltering(sce_disease, model_disease))
+```
+
+Filter cells
+```{r}
+sce_disease_filt <- filterCells(sce_disease, model_disease,
+                                keep_all_below_boundary = TRUE,
+                                enforce_left_cutoff = TRUE)
+message(sprintf("Disease cells before miQC: %d", ncol(sce_disease)))
+message(sprintf("Disease cells after miQC:  %d", ncol(sce_disease_filt)))
+```
+
+Convert back to Seurat and reprocess
+```{r}
+seu_disease_miqc <- as.Seurat(sce_disease_filt, counts = "counts", data = NULL)
+seu_disease_miqc <- NormalizeData(seu_disease_miqc, verbose = FALSE)
+seu_disease_miqc <- FindVariableFeatures(seu_disease_miqc, nfeatures = 2000, verbose = FALSE)
+seu_disease_miqc <- ScaleData(seu_disease_miqc, verbose = FALSE)
+seu_disease_miqc <- RunPCA(seu_disease_miqc, npcs = npcs_use, verbose = FALSE)
+seu_disease_miqc <- FindNeighbors(seu_disease_miqc, dims = 1:npcs_use,
+                                  k.param = k_param, verbose = FALSE)
+seu_disease_miqc <- FindClusters(seu_disease_miqc, resolution = cluster_resolution,
+                                 algorithm = 1, random.seed = random_seed, verbose = FALSE)
+seu_disease_miqc <- RunUMAP(seu_disease_miqc, dims = 1:20, verbose = FALSE)
+```
+
+UMAP
+```{r}
+print(DimPlot(seu_disease_miqc, reduction = "umap") + ggtitle("miQC UMAP: disease kidney"))
+```
+
+Save
+```{r}
+saveRDS(seu_disease_miqc, file = "disease_miQC_filtered.rds")
+```
+

@@ -12,7 +12,7 @@ library(tibble)
 library(patchwork)
 
 # Adding the input files and output directory
-infile  <- "/projectnb/ds596/projects/Team 9/scQC_project/colon_immune_raw.rds"
+infile  <- "/projectnb/ds596/projects/'Team 9'/scQC_project/colon_immune_raw.rds"
 out_dir <- "ddqc_analysis"
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 
@@ -143,11 +143,11 @@ ddqc_cutoffs <- meta_ddqc %>%
 
 print(ddqc_cutoffs)
 
-#write.csv(
-  #ddqc_cutoffs,
-  #file = file.path(out_dir, "ddqc_cluster_cutoffs.csv"),
-  #row.names = FALSE
-#)
+write.csv(
+  ddqc_cutoffs,
+  file = file.path(out_dir, "ddqc_cluster_cutoffs.csv"),
+  row.names = FALSE
+)
 
 # Adding labels to the cells
 meta_ddqc_labeled <- meta_ddqc %>%
@@ -184,11 +184,11 @@ cluster_removal_summary <- meta_ddqc_labeled %>%
 ddqc_cutoffs_full <- ddqc_cutoffs %>%
   left_join(cluster_removal_summary, by = "cluster")
 
-#write.csv(
-  #ddqc_cutoffs_full,
-  #file = file.path(out_dir, "ddqc_cluster_cutoffs_with_removal.csv"),
-  #row.names = FALSE
-#)
+write.csv(
+  ddqc_cutoffs_full,
+  file = file.path(out_dir, "ddqc_cluster_cutoffs_with_removal.csv"),
+  row.names = FALSE
+)
 
 # Creating the ddqc-filtered object
 seu_ddqc <- subset(seu_prefilt, cells = cells_keep_ddqc)

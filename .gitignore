@@ -39,10 +39,14 @@ data/recreate_kidney/*.txt.gz
 data/recreate_kidney/*.xlsx
 data/recreate_kidney/*.tar.gz
 
+*.gz
+*.tar
+*.csv
+*.pdf
+*.html
 *.rds
-
-recreation/noQC/no_qc_clusters.csv
-recreation/noQC/*.png
-recreation/standard_QC/*.png
-
+*.png
+*.tar
+*.pdf
+*.csv
 

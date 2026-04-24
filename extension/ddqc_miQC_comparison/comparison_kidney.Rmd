@@ -1,0 +1,229 @@
+---
+title: "comparison_kidney"
+output: html_document
+---
+
+## Compares ddqc and miQC QC outputs on the kidney extension dataset (GSE171314)
+
+Load the libraries
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+library(tidyr)
+```
+
+Load in the objects
+
+```{r}
+seu_pre  <- readRDS("kidney_pre_ddqc_seurat.rds")
+seu_ddqc <- readRDS("kidney_post_ddqc_seurat.rds")
+ 
+seu_healthy_miqc <- readRDS("healthy_miQC_filtered.rds")
+seu_disease_miqc <- readRDS("disease_miQC_filtered.rds")
+ 
+seu_miqc <- merge(seu_healthy_miqc, y = seu_disease_miqc, project = "Kidney_miQC")
+ 
+cat("Baseline (pre-ddqc):  ", ncol(seu_pre),  "cells\n")
+cat("After ddqc:           ", ncol(seu_ddqc), "cells\n")
+cat("After miQC (merged):  ", ncol(seu_miqc), "cells\n")
+```
+
+### 1) Cell Retention
+
+```{r}
+conds <- c("Healthy", "Disease")
+ 
+baseline_counts <- table(seu_pre$condition)
+ddqc_counts     <- table(seu_ddqc$condition)
+miqc_counts     <- table(seu_miqc$condition)
+ 
+retention_df <- data.frame(
+  Condition     = conds,
+  Baseline      = as.numeric(baseline_counts[conds]),
+  ddqc_Retained = as.numeric(ddqc_counts[conds]),
+  miQC_Retained = as.numeric(miqc_counts[conds])
+)
+retention_df[is.na(retention_df)] <- 0
+ 
+retention_df <- retention_df %>%
+  mutate(
+    ddqc_Removed      = Baseline - ddqc_Retained,
+    miQC_Removed      = Baseline - miQC_Retained,
+    ddqc_Pct_Retained = round(ddqc_Retained / Baseline * 100, 2),
+    miQC_Pct_Retained = round(miQC_Retained / Baseline * 100, 2)
+  )
+ 
+print(retention_df)
+write.csv(retention_df, "kidney_comparison_retention.csv", row.names = FALSE)
+ 
+retention_long <- retention_df %>%
+  select(Condition, ddqc_Pct_Retained, miQC_Pct_Retained) %>%
+  pivot_longer(
+    cols      = c(ddqc_Pct_Retained, miQC_Pct_Retained),
+    names_to  = "Method",
+    values_to = "Pct_Retained"
+  ) %>%
+  mutate(Method = recode(Method,
+    ddqc_Pct_Retained = "ddqc",
+    miQC_Pct_Retained = "miQC"
+  ))
+ 
+p_retention <- ggplot(retention_long, aes(x = Condition, y = Pct_Retained, fill = Method)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.6) +
+  geom_text(
+    aes(label = paste0(Pct_Retained, "%")),
+    position = position_dodge(width = 0.6),
+    vjust = -0.4, size = 3.5
+  ) +
+  scale_fill_manual(values = c("ddqc" = "#2C7BB6", "miQC" = "#D7191C")) +
+  labs(
+    title = "Percent Cells Retained After QC by Method and Condition",
+    x     = "Condition",
+    y     = "% Cells Retained",
+    fill  = "QC Method"
+  ) +
+  ylim(0, 105) +
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+ 
+print(p_retention)
+ggsave("kidney_retention_barplot.png", p_retention, width = 7, height = 5, dpi = 300)
+ 
+```
+
+### 2) Barcode Overlap
+
+```{r}
+all_barcodes   <- colnames(seu_pre)
+ddqc_kept      <- colnames(seu_ddqc)
+miqc_kept      <- colnames(seu_miqc)
+ 
+both_kept      <- intersect(ddqc_kept, miqc_kept)
+ddqc_only_kept <- setdiff(ddqc_kept, miqc_kept)
+miqc_only_kept <- setdiff(miqc_kept, ddqc_kept)
+both_removed   <- setdiff(all_barcodes, union(ddqc_kept, miqc_kept))
+ 
+overlap_df <- data.frame(
+  Category = c("Kept by both", "Kept by ddqc only", "Kept by miQC only", "Removed by both"),
+  Cells    = c(length(both_kept), length(ddqc_only_kept), length(miqc_only_kept), length(both_removed))
+)
+ 
+print(overlap_df)
+write.csv(overlap_df, "kidney_barcode_overlap.csv", row.names = FALSE)
+ 
+p_overlap <- ggplot(overlap_df, aes(x = Category, y = Cells, fill = Category)) +
+  geom_bar(stat = "identity", width = 0.6) +
+  geom_text(aes(label = Cells), vjust = -0.4, size = 3.5) +
+  scale_fill_manual(values = c(
+    "Kept by both"      = "#4DAC26",
+    "Kept by ddqc only" = "#2C7BB6",
+    "Kept by miQC only" = "#D7191C",
+    "Removed by both"   = "#808080"
+  )) +
+  labs(title = "Barcode Overlap Between ddqc and miQC", x = NULL, y = "Number of Cells") +
+  ylim(0, max(overlap_df$Cells) * 1.1) +
+  theme_classic() +
+  theme(
+    plot.title      = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "none",
+    axis.text.x     = element_text(angle = 20, hjust = 1)
+  )
+ 
+print(p_overlap)
+ggsave("kidney_barcode_overlap.png", p_overlap, width = 7, height = 5, dpi = 300)
+```
+
+### 3) QC Metric Distributions
+
+```{r}
+seu_pre[["percent.mt"]] <- PercentageFeatureSet(seu_pre, pattern = "^MT-")
+ 
+meta <- seu_pre@meta.data %>%
+  tibble::rownames_to_column("barcode") %>%
+  mutate(retention = case_when(
+    barcode %in% both_kept      ~ "Kept by both",
+    barcode %in% ddqc_only_kept ~ "Kept by ddqc only",
+    barcode %in% miqc_only_kept ~ "Kept by miQC only",
+    TRUE                        ~ "Removed by both"
+  ))
+ 
+retention_colors <- c(
+  "Kept by both"      = "#4DAC26",
+  "Kept by ddqc only" = "#2C7BB6",
+  "Kept by miQC only" = "#D7191C",
+  "Removed by both"   = "#808080"
+)
+ 
+p_ngene <- ggplot(meta, aes(x = retention, y = nFeature_RNA, fill = retention)) +
+  geom_violin(scale = "width") +
+  scale_fill_manual(values = retention_colors) +
+  labs(title = "Genes detected by retention category", x = NULL, y = "nFeature_RNA") +
+  theme_classic() +
+  theme(
+    plot.title      = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "none",
+    axis.text.x     = element_text(angle = 20, hjust = 1)
+  )
+ 
+p_mito <- ggplot(meta, aes(x = retention, y = percent.mt, fill = retention)) +
+  geom_violin(scale = "width") +
+  scale_fill_manual(values = retention_colors) +
+  labs(title = "% mitochondrial reads by retention category", x = NULL, y = "percent.mt") +
+  theme_classic() +
+  theme(
+    plot.title      = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "none",
+    axis.text.x     = element_text(angle = 20, hjust = 1)
+  )
+ 
+p_qc <- p_ngene + p_mito +
+  plot_annotation(title = "QC metrics by retention category: ddqc vs miQC")
+ 
+print(p_qc)
+ggsave("kidney_qc_metrics_by_retention.png", p_qc, width = 12, height = 5, dpi = 300)
+```
+
+### 4) UMAP Colored by Retention Status
+
+```{r}
+retention_vec     <- setNames(meta$retention, meta$barcode)
+seu_pre$retention <- retention_vec[colnames(seu_pre)]
+ 
+seu_pre <- NormalizeData(seu_pre, verbose = FALSE)
+seu_pre <- FindVariableFeatures(seu_pre, nfeatures = 2000, verbose = FALSE)
+seu_pre <- ScaleData(seu_pre, verbose = FALSE)
+seu_pre <- RunPCA(seu_pre, npcs = 50, verbose = FALSE)
+seu_pre <- FindNeighbors(seu_pre, dims = 1:50, k.param = 20, verbose = FALSE)
+seu_pre <- RunUMAP(seu_pre, dims = 1:20, verbose = FALSE)
+ 
+p_umap_retention <- DimPlot(
+  seu_pre,
+  reduction = "umap",
+  group.by  = "retention",
+  pt.size   = 0.3,
+  cols      = retention_colors
+) +
+  ggtitle("UMAP colored by retention status: ddqc vs miQC") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.text  = element_blank(),
+    axis.ticks = element_blank()
+  )
+ 
+print(p_umap_retention)
+ggsave("kidney_umap_retention.png", p_umap_retention, width = 8, height = 6, dpi = 300)
+```
+
+### Summary
+
+```{r}
+cat("Total cells (baseline):", sum(retention_df$Baseline), "\n")
+cat("Kept by both:          ", length(both_kept), "\n")
+cat("Kept by ddqc only:     ", length(ddqc_only_kept), "\n")
+cat("Kept by miQC only:     ", length(miqc_only_kept), "\n")
+cat("Removed by both:       ", length(both_removed), "\n")
+```
