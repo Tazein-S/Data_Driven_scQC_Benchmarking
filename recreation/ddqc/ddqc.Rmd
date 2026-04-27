@@ -1,0 +1,83 @@
+---
+title: "ddQC"
+output: html_document
+---
+
+```{r}
+if (!requireNamespace("devtools", quietly = TRUE)) install.packages("devtools")
+if (!requireNamespace("Seurat", quietly = TRUE)) install.packages("Seurat")
+if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2")
+
+if (!requireNamespace("ddqcR", quietly = TRUE)) {
+  devtools::install_github("ayshwaryas/ddqc_R")
+}
+
+library(Seurat)
+library(ggplot2)
+library(ddqcR)
+library(RColorBrewer)
+
+# Loading the preprocessed object
+rds_path <- "/projectnb/ds596/projects/Team 9/scQC_project/colon_immune_raw.rds"
+
+seu <- readRDS(rds_path)
+
+# Performing the basic QC 
+seu_basic <- initialQC(
+  data = seu,
+  basic.n.genes = 100,
+  basic.percent.mt = 80,
+  mt.prefix = "MT-",
+  rb.prefix = "^RP[SL][[:digit:]]|^RPLP[[:digit:]]|^RPSA"
+)
+
+# Running the DDQC
+df.qc <- ddqc.metrics(
+  data = seu_basic,
+  n.pcs = 50,
+  k.param = 20,
+  res = 1.4,
+  threshold = 2,
+  do.counts = TRUE,
+  do.genes = TRUE,
+  do.mito = TRUE,
+  do.ribo = FALSE,
+  n.genes.lower.bound = 200,
+  percent.mito.upper.bound = 10,
+  random.state = 29
+)
+
+table(df.qc$passed.qc)
+
+# Filtering the cells
+seu_ddqc <- filterData(seu_basic, df.qc)
+
+# Performing the downstream Seurat workflow 
+seu_ddqc <- NormalizeData(seu_ddqc, verbose = FALSE)
+seu_ddqc <- FindVariableFeatures(seu_ddqc, selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+seu_ddqc <- ScaleData(seu_ddqc, verbose = FALSE)
+seu_ddqc <- RunPCA(seu_ddqc, npcs = 50, verbose = FALSE)
+seu_ddqc <- FindNeighbors(seu_ddqc, dims = 1:50, verbose = FALSE)
+seu_ddqc <- FindClusters(seu_ddqc, resolution = 1.4, verbose = FALSE)
+seu_ddqc <- RunUMAP(seu_ddqc, dims = 1:20, reduction = "pca", verbose = FALSE)
+
+# Plotting the UMAP
+dark_colors <- colorRampPalette(brewer.pal(8, "Dark2"))(length(unique(seu_ddqc$seurat_clusters)))
+p_umap <- DimPlot(
+  seu_ddqc,
+  reduction = "umap",
+  group.by = "seurat_clusters",
+  label = TRUE,
+  repel = TRUE,
+  pt.size = 0.6
+) +
+  ggtitle("UMAP after DDQC filtering") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  )
+
+print(p_umap)
+```
