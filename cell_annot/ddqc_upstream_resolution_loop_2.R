@@ -43,7 +43,7 @@ random_seed              <- 29
 n_genes_lower_bound      <- 200
 percent_mito_upper_bound <- 10
 
-resolutions              <- c(0.4, 0.8, 1.3, 1.6, 2.0)
+resolutions              <- c(0.4, 0.8, 1.3, 1.6, 2)
 
 
 # ---- 1. LOAD DATA (once, outside loop) ----------------------------------------
