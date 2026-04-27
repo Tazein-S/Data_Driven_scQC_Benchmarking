@@ -7,7 +7,7 @@
 ##   B — miQC (no cluster column, Venn + status UMAP)
 ##   C — Standard cutoff
 ## ============================================================
-
+install.packages("ggvenn", repos = "https://cran.r-project.org")
 suppressPackageStartupMessages({
   library(ggplot2)
   library(cowplot)

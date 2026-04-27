@@ -35,7 +35,7 @@ std_n_genes_min      <- 200
 std_percent_mito_max <- 10
 npcs_use             <- 50
 k_param              <- 20
-cluster_resolution   <- 1.4
+cluster_resolution   <- 1.3
 random_seed          <- 29
 
 

@@ -7,7 +7,6 @@ import os
 base_dir        = "/projectnb/ds596/projects/Team 9/scQC_project"
 ddqc_dir        = f"{base_dir}/ddqc_annot"
 miqc_dir        = f"{base_dir}/recreation/miQC"
-std_dir         = f"{base_dir}/recreation/standard_cutoff"
 annot_dir       = f"{base_dir}/cell_annot"
 out_dir         = f"{base_dir}/compare_annot"
 
@@ -201,10 +200,6 @@ for res in resolutions:
     # Build summary table
     summary = build_summary(cells_df, celltypist_df, singler_df, has_cluster=True)
 
-    # Rename cluster → ddqc_cluster in summary directly (once, before loop)
-    if "cluster" in summary.columns:
-        summary = summary.rename(columns={"cluster": "ddqc_cluster"})
-
     # Drop cells with missing annotation labels
     summary_ct = summary.dropna(subset=["cell_typist"])
     summary_sr = summary.dropna(subset=["single_r"])
@@ -212,11 +207,15 @@ for res in resolutions:
     # MAD filtering using each grouping column
     # do_counts=False — matches authors' mad_filtering.py exactly
     for classification in ["ddqc_cluster", "cell_typist", "single_r"]:
-        sub = summary.copy() if classification == "ddqc_cluster" else \
-              summary_ct.copy() if classification == "cell_typist" else summary_sr.copy()
+        sub = summary if classification == "ddqc_cluster" else \
+              summary_ct if classification == "cell_typist" else summary_sr
+
+        # Rename cluster col if needed
+        if classification == "ddqc_cluster" and "cluster" in sub.columns:
+            sub = sub.rename(columns={"cluster": "ddqc_cluster"})
 
         sub = filter_cells(
-            sub,
+            sub.copy(),
             classification = classification,
             method         = "mad",
             threshold      = 2,
@@ -243,12 +242,20 @@ for res in resolutions:
             })
 
     # Cross-tabulation: ddqc cluster vs cell_typist
-    if "cell_typist" in summary.columns and "ddqc_cluster" in summary.columns:
-        tab = pd.crosstab(summary["ddqc_cluster"], summary["cell_typist"])
+    if "cell_typist" in summary.columns and "cluster" in cells_df.columns:
+        tab = pd.crosstab(
+            summary["ddqc_cluster"] if "ddqc_cluster" in summary.columns
+            else summary.rename(columns={"cluster": "ddqc_cluster"})["ddqc_cluster"],
+            summary["cell_typist"]
+        )
         tab.to_csv(os.path.join(out_dir, f"crosstab_ddqc_vs_celltypist_res_{res}.csv"))
 
-    if "single_r" in summary.columns and "ddqc_cluster" in summary.columns:
-        tab = pd.crosstab(summary["ddqc_cluster"], summary["single_r"])
+    if "single_r" in summary.columns and "cluster" in cells_df.columns:
+        tab = pd.crosstab(
+            summary["ddqc_cluster"] if "ddqc_cluster" in summary.columns
+            else summary.rename(columns={"cluster": "ddqc_cluster"})["ddqc_cluster"],
+            summary["single_r"]
+        )
         tab.to_csv(os.path.join(out_dir, f"crosstab_ddqc_vs_singler_res_{res}.csv"))
 
 # Save ddqc concordance summary
@@ -293,6 +300,19 @@ if os.path.exists(miqc_cells_path):
         )
 
         summary[classification + "_passed_qc"] = sub[classification + "_passed_qc"]
+    
+    # In mad_filtering_comparison.py, after the miQC MAD filtering block
+    retention = pd.DataFrame({
+    "method": ["miQC", "CellTypist MAD", "SingleR MAD"],
+    "cells_retained": [
+        summary["keep_miqc"].sum(),
+        summary["cell_typist_passed_qc"].sum(),
+        summary["single_r_passed_qc"].sum()
+    ],
+    "total_cells": len(summary),
+    })
+    retention["frac_retained"] = retention["cells_retained"] / retention["total_cells"]
+    retention.to_csv(os.path.join(out_dir, "miqc_retention_summary.csv"), index=False)
 
     # Save full results
     out_path = os.path.join(out_dir, "miqc_classification_mad_results.csv")
@@ -318,91 +338,6 @@ if os.path.exists(miqc_cells_path):
 
 else:
     print(f"miQC cells_initial.csv not found at {miqc_cells_path} — skipping")
-
-
-# ============================================================
-# PART C — Standard Cutoff
-# ============================================================
-
-print("\n" + "=" * 50)
-print("PART C — Standard cutoff annotation comparison")
-print("=" * 50)
-
-std_dir         = f"{base_dir}/recreation/standard_cutoff"
-std_cells_path  = os.path.join(std_dir, "stdCutoff_cells_initial.csv")
-
-if os.path.exists(std_cells_path):
-
-    cells_df = pd.read_csv(std_cells_path)
-    print(f"Loaded {len(cells_df)} cells")
-
-    # Build summary — join QC metrics with annotation labels
-    summary = build_summary(cells_df, celltypist_df, singler_df, has_cluster=True)
-
-    # Rename cluster column
-    if "cluster" in summary.columns:
-        summary = summary.rename(columns={"cluster": "std_cluster"})
-
-    # Drop cells with NA cluster (filtered out by standard cutoff)
-    summary_clustered = summary.dropna(subset=["std_cluster"])
-    summary_ct        = summary_clustered.dropna(subset=["cell_typist"])
-    summary_sr        = summary_clustered.dropna(subset=["single_r"])
-
-    # MAD filtering — do_counts=False matching authors
-    for classification in ["std_cluster", "cell_typist", "single_r"]:
-        sub = summary_clustered.copy() if classification == "std_cluster" else \
-              summary_ct.copy()        if classification == "cell_typist"  else \
-              summary_sr.copy()
-
-        sub = filter_cells(
-            sub,
-            classification = classification,
-            method         = "mad",
-            threshold      = 2,
-            do_counts      = False
-        )
-        summary[classification + "_passed_qc"] = sub[classification + "_passed_qc"]
-
-    # Save results
-    out_path = os.path.join(out_dir, "std_classification_mad_results.csv")
-    summary.to_csv(out_path)
-    print(f"Saved: {out_path}")
-
-    # Concordance vs keep_std
-    std_concordance_rows = []
-    for col in ["cell_typist_passed_qc", "single_r_passed_qc"]:
-        if col in summary.columns:
-            valid = summary["keep_std"].notna() & summary[col].notna()
-            c = (summary.loc[valid, "keep_std"] == summary.loc[valid, col]).mean()
-            print(f"  Concordance keep_std vs {col}: {c:.4f} ({c*100:.2f}%)")
-            std_concordance_rows.append({
-                "comparison"  : f"keep_std vs {col}",
-                "concordance" : round(c, 4)
-            })
-
-    if std_concordance_rows:
-        pd.DataFrame(std_concordance_rows).to_csv(
-            os.path.join(out_dir, "std_concordance_summary.csv"), index=False
-        )
-        print("Saved: std_concordance_summary.csv")
-
-    # Cross-tabulation
-    if "cell_typist" in summary.columns and "std_cluster" in summary.columns:
-        tab = pd.crosstab(
-            summary["std_cluster"].dropna(),
-            summary.loc[summary["std_cluster"].notna(), "cell_typist"]
-        )
-        tab.to_csv(os.path.join(out_dir, "crosstab_std_vs_celltypist.csv"))
-
-    if "single_r" in summary.columns and "std_cluster" in summary.columns:
-        tab = pd.crosstab(
-            summary["std_cluster"].dropna(),
-            summary.loc[summary["std_cluster"].notna(), "single_r"]
-        )
-        tab.to_csv(os.path.join(out_dir, "crosstab_std_vs_singler.csv"))
-
-else:
-    print(f"Standard cutoff cells_initial not found at {std_cells_path} — skipping")
 
 
 print("\n=== Done. Outputs in:", out_dir, "===")

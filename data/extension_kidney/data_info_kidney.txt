@@ -1,0 +1,19 @@
+Dataset: Tang et al. 2021 (GSE171314)
+Compartment: Kidney (IgA Nephropathy + Healthy)
+Technology: 10x Genomics
+
+Files
+-----
+(WHAT WE WANT TO ANALYZE!)
+GSE171314_scRNA_healthy.rds
+    Seurat object with raw integer UMI counts.
+    1 healthy donor (GSM5222734).
+    Dimensions: 6,438 cells
+
+GSE171314_scRNA_disease.rds
+    Seurat object with raw integer UMI counts, layers joined across samples.
+    4 IgAN patients (GSM5222730, GSM5222731, GSM5222732, GSM5222733).
+    Dimensions: 14,132 cells
+
+info_kidney.csv
+    Dataset metadata summary (source, technology, reference, etc.)
