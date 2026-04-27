@@ -1,0 +1,325 @@
+---
+title: "ddqc_extension"
+output: html_document
+date: "2026-04-22"
+---
+```{r}
+# Installing and loading packages
+if (!requireNamespace("devtools", quietly = TRUE)) install.packages("devtools")
+if (!requireNamespace("Seurat", quietly = TRUE)) install.packages("Seurat")
+if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2")
+if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
+if (!requireNamespace("patchwork", quietly = TRUE)) install.packages("patchwork")
+if (!requireNamespace("tibble", quietly = TRUE)) install.packages("tibble")
+if (!requireNamespace("RColorBrewer", quietly = TRUE)) install.packages("RColorBrewer")
+
+if (!requireNamespace("ddqcR", quietly = TRUE)) {
+  devtools::install_github("ayshwaryas/ddqc_R")
+}
+
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+library(tibble)
+library(RColorBrewer)
+library(ddqcR)
+```
+
+```{r}
+# File paths
+healthy_rds <- "/projectnb/ds596/projects/Team 9/scQC_project/data/extension_kidney/GSE171314_scRNA_healthy.rds"
+disease_rds <- "/projectnb/ds596/projects/Team 9/scQC_project/data/extension_kidney/GSE171314_scRNA_disease.rds"
+```
+
+```{r}
+# Reading the objects
+healthy <- readRDS(healthy_rds)
+disease <- readRDS(disease_rds)
+
+# Adding the condition labels
+healthy$condition <- "Healthy"
+disease$condition <- "Disease"
+
+healthy <- RenameCells(healthy, add.cell.id = "Healthy")
+disease <- RenameCells(disease, add.cell.id = "Disease")
+
+seu <- merge(healthy, y = disease, project = "Kidney_DDQC")
+
+cat("Total cells before QC:", ncol(seu), "\n")
+print(table(seu$condition))
+```
+
+```{r}
+# Running the basic QC
+seu_basic <- initialQC(
+  data = seu,
+  basic.n.genes = 100,
+  basic.percent.mt = 80,
+  mt.prefix = "MT-",
+  rb.prefix = "^RP[SL][[:digit:]]|^RPLP[[:digit:]]|^RPSA"
+)
+
+cat("Cells after basic QC:", ncol(seu_basic), "\n")
+print(table(seu_basic$condition))
+```
+
+```{r}
+# Running DDQC
+df.qc <- ddqc.metrics(
+  data = seu_basic,
+  n.pcs = 50,
+  k.param = 20,
+  res = 1.4,
+  threshold = 2,
+  do.counts = TRUE,
+  do.genes = TRUE,
+  do.mito = TRUE,
+  do.ribo = FALSE,
+  n.genes.lower.bound = 200,
+  percent.mito.upper.bound = 10,
+  random.state = 29
+)
+
+cat("DDQC pass/fail summary:\n")
+print(table(df.qc$passed.qc))
+
+# Filter with DDQC
+seu_ddqc <- filterData(seu_basic, df.qc)
+
+cat("Cells after DDQC:", ncol(seu_ddqc), "\n")
+print(table(seu_ddqc$condition))
+```
+
+
+```{r}
+run_pipeline <- function(obj, resolution_value = 1.4, npcs_use = 50) {
+  obj <- NormalizeData(obj, verbose = FALSE)
+  obj <- FindVariableFeatures(
+    obj,
+    selection.method = "vst",
+    nfeatures = 2000,
+    verbose = FALSE
+  )
+  obj <- ScaleData(obj, verbose = FALSE)
+  obj <- RunPCA(obj, npcs = npcs_use, verbose = FALSE)
+  obj <- FindNeighbors(obj, dims = 1:npcs_use, k.param = 20, verbose = FALSE)
+  obj <- FindClusters(obj, resolution = resolution_value, verbose = FALSE)
+  obj <- RunUMAP(obj, dims = 1:20, reduction = "pca", verbose = FALSE)
+  return(obj)
+}
+
+# Running pipeline for before and after DDQC
+seu_before <- run_pipeline(seu_basic, resolution_value = 1.4, npcs_use = 50)
+seu_after  <- run_pipeline(seu_ddqc, resolution_value = 1.4, npcs_use = 50)
+```
+
+```{r}
+# Generating the QC summary table
+before_counts <- table(seu$condition)
+basic_counts  <- table(seu_basic$condition)
+ddqc_counts   <- table(seu_ddqc$condition)
+
+conds <- union(names(before_counts), union(names(basic_counts), names(ddqc_counts)))
+
+qc_summary <- data.frame(
+  Condition = conds,
+  Before_QC = as.numeric(before_counts[conds]),
+  After_Basic_QC = as.numeric(basic_counts[conds]),
+  After_DDQC = as.numeric(ddqc_counts[conds])
+)
+
+qc_summary[is.na(qc_summary)] <- 0
+
+qc_summary <- qc_summary %>%
+  mutate(
+    Basic_QC_Removed = Before_QC - After_Basic_QC,
+    DDQC_Removed = After_Basic_QC - After_DDQC,
+    Percent_Retained_After_DDQC = round((After_DDQC / Before_QC) * 100, 2)
+  )
+
+print(qc_summary)
+
+write.csv(qc_summary, "kidney_ddqc_condition_summary.csv", row.names = FALSE)
+```
+
+```{r}
+# Generating the cluster count summary
+cluster_summary <- data.frame(
+  Dataset = c("Before_DDQC", "After_DDQC"),
+  Cells = c(ncol(seu_before), ncol(seu_after)),
+  Clusters = c(
+    length(unique(seu_before$seurat_clusters)),
+    length(unique(seu_after$seurat_clusters))
+  )
+)
+
+print(cluster_summary)
+
+write.csv(cluster_summary, "kidney_ddqc_cluster_summary.csv", row.names = FALSE)
+```
+
+```{r}
+# Creating UMAPs based on clusters 
+p_before_clusters <- DimPlot(
+  seu_before,
+  reduction = "umap",
+  group.by = "seurat_clusters",
+  label = TRUE,
+  repel = TRUE,
+  pt.size = 0.4
+) +
+  ggtitle("Pre-DDQC UMAP (clusters)") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  )
+
+p_after_clusters <- DimPlot(
+  seu_after,
+  reduction = "umap",
+  group.by = "seurat_clusters",
+  label = TRUE,
+  repel = TRUE,
+  pt.size = 0.4
+) +
+  ggtitle("Post-DDQC UMAP (clusters)") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  )
+
+p_clusters_compare <- p_before_clusters + p_after_clusters +
+  plot_annotation(title = "Kidney healthy vs disease: cluster structure before and after DDQC")
+
+print(p_clusters_compare)
+
+ggsave(
+  "kidney_ddqc_clusters_before_after.png",
+  p_clusters_compare,
+  width = 14,
+  height = 6,
+  dpi = 300
+)
+```
+
+```{r}
+# Creating UMAPs based on the condition
+p_before_condition <- DimPlot(
+  seu_before,
+  reduction = "umap",
+  group.by = "condition",
+  pt.size = 0.4
+) +
+  ggtitle("Pre-DDQC UMAP (Healthy vs Disease)") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  )
+
+p_after_condition <- DimPlot(
+  seu_after,
+  reduction = "umap",
+  group.by = "condition",
+  pt.size = 0.4
+) +
+  ggtitle("Post-DDQC UMAP (Healthy vs Disease)") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  )
+
+p_condition_compare <- p_before_condition + p_after_condition +
+  plot_annotation(title = "Kidney healthy vs disease: condition structure before and after DDQC")
+
+print(p_condition_compare)
+
+ggsave(
+  "kidney_ddqc_condition_before_after.png",
+  p_condition_compare,
+  width = 14,
+  height = 6,
+  dpi = 300
+)
+```
+
+```{r}
+# Creating split UMAPs for comparison
+p_before_split <- DimPlot(
+  seu_before,
+  reduction = "umap",
+  group.by = "seurat_clusters",
+  split.by = "condition",
+  label = TRUE,
+  repel = TRUE,
+  pt.size = 0.35,
+  ncol = 2
+) +
+  ggtitle("Pre-DDQC clusters split by condition") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  )
+
+p_after_split <- DimPlot(
+  seu_after,
+  reduction = "umap",
+  group.by = "seurat_clusters",
+  split.by = "condition",
+  label = TRUE,
+  repel = TRUE,
+  pt.size = 0.35,
+  ncol = 2
+) +
+  ggtitle("Post-DDQC clusters split by condition") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  )
+
+print(p_before_split)
+print(p_after_split)
+
+ggsave(
+  "kidney_ddqc_split_before.png",
+  p_before_split,
+  width = 12,
+  height = 6,
+  dpi = 300
+)
+
+ggsave(
+  "kidney_ddqc_split_after.png",
+  p_after_split,
+  width = 12,
+  height = 6,
+  dpi = 300
+)
+```
+
+```{r}
+# Saving the final Seurat objects
+saveRDS(seu_before, file = "kidney_pre_ddqc_seurat.rds")
+saveRDS(seu_after,  file = "kidney_post_ddqc_seurat.rds")
+
+cat("- kidney_ddqc_condition_summary.csv\n")
+cat("- kidney_ddqc_cluster_summary.csv\n")
+cat("- kidney_ddqc_clusters_before_after.png\n")
+cat("- kidney_ddqc_condition_before_after.png\n")
+cat("- kidney_ddqc_split_before.png\n")
+cat("- kidney_ddqc_split_after.png\n")
+cat("- kidney_pre_ddqc_seurat.rds\n")
+cat("- kidney_post_ddqc_seurat.rds\n")
+```
